@@ -1,0 +1,14 @@
+roles:
+  employee:
+    allowed_departments: [general, engineering, hr_public]
+  manager:
+    allowed_departments: [general, engineering, hr_public, finance, management]
+  hr_admin:
+    allowed_departments: [general, engineering, hr_public, finance, management, hr_private]
+users:
+  employee1:
+    role: employee
+  manager1:
+    role: manager
+  hradmin:
+    role: hr_admin
