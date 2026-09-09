@@ -1,4 +1,5 @@
 import os
+import uuid
 from typing import Any
 
 from qdrant_client import QdrantClient, models
@@ -28,7 +29,7 @@ def ensure_collection(client: QdrantClient, vector_size: int) -> None:
 def upsert_chunks(client: QdrantClient, vectors: list[list[float]], chunks: list[dict[str, Any]]) -> None:
     points = [
         models.PointStruct(
-            id=i,
+            id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{chunk.get("source","unknown")}::{chunk.get("department","general")}::{i}")),
             vector=vector,
             payload=chunk,
         )
