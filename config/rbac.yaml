@@ -5,10 +5,15 @@ roles:
     allowed_departments: [general, engineering, hr_public, finance, management]
   hr_admin:
     allowed_departments: [general, engineering, hr_public, finance, management, hr_private]
+
+# Demo hashes only. Change these before any real deployment.
 users:
   employee1:
     role: employee
+    password_hash: 'pbkdf2_sha256$310000$Xrd3L1iaYm5jRMuNgy6jxg$Ub7oc7wy0yX7L4vMu-IaHSOLM0yXSJXgdDobARME_nE'
   manager1:
     role: manager
+    password_hash: 'pbkdf2_sha256$310000$wVQ32WRV9ABUuSsqR9Q4dQ$qQJEtbjH83IjR3o-2AwY_59kepkp7YyOoKqzOX7BHZw'
   hradmin:
     role: hr_admin
+    password_hash: 'pbkdf2_sha256$310000$u5QjUMyBOylrpFFlkgNK-g$limma3AWGcOeq101UGIPGM2EEG4Dmgo7amszc4IW1N0'
