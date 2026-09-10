@@ -1,0 +1,9 @@
+.git
+.github
+.env
+.venv
+venv
+__pycache__
+*.pyc
+qdrant_data
+.pytest_cache
