@@ -10,6 +10,7 @@ from src.auth import decode_token, issue_token
 from src.database import Database
 from src.rag import EnterpriseRAG
 from src.rbac import authenticate, session_from_claims
+from src.sso import session_from_oidc_user
 
 st.set_page_config(page_title="Enterprise RAG", page_icon="🔐")
 
@@ -22,24 +23,21 @@ def init_database() -> bool:
     Database().initialize()
     return True
 
-# Fail fast with a clear deployment message if PostgreSQL is not configured.
 try:
     init_database()
-except Exception as exc:
+except Exception:
     st.error("Database is not configured or unavailable. Set DATABASE_URL and run scripts/init_db.py.")
     st.stop()
 
 
-def login() -> None:
-    st.title("🔐 Enterprise AI Knowledge Assistant")
+def regular_login() -> None:
     with st.form("login"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
         submitted = st.form_submit_button("Sign in", type="primary")
     if submitted:
         now = time.time()
-        attempts = st.session_state.get("login_attempts", [])
-        attempts = [t for t in attempts if now - t < 300]
+        attempts = [t for t in st.session_state.get("login_attempts", []) if now - t < 300]
         if len(attempts) >= 5:
             audit_event("login_rate_limited", username=username.strip() or None)
             st.error("Too many failed login attempts. Try again later.")
@@ -48,14 +46,42 @@ def login() -> None:
             session = authenticate(username.strip(), password)
             st.session_state["access_token"] = issue_token(session)
             st.session_state["session"] = session
+            st.session_state["auth_method"] = "password"
             st.session_state["login_attempts"] = []
-            audit_event("login_success", username=session["username"], role=session["role"])
+            audit_event("login_success", username=session["username"], role=session["role"], details={"method": "password"})
             st.rerun()
         except ValueError:
             attempts.append(now)
             st.session_state["login_attempts"] = attempts
-            audit_event("login_failure", username=username.strip() or None)
+            audit_event("login_failure", username=username.strip() or None, details={"method": "password"})
             st.error("Invalid username or password")
+
+
+def login() -> None:
+    st.title("🔐 Enterprise AI Knowledge Assistant")
+    oidc_enabled = os.getenv("OIDC_ENABLED", "false").lower() == "true"
+
+    if oidc_enabled:
+        st.subheader("Enterprise SSO")
+        if st.button("Sign in with SSO", type="primary"):
+            st.login(os.getenv("OIDC_PROVIDER", "google"))
+        st.divider()
+
+        if getattr(st.user, "is_logged_in", False):
+            try:
+                session = session_from_oidc_user(dict(st.user))
+                st.session_state["access_token"] = issue_token(session)
+                st.session_state["session"] = session
+                st.session_state["auth_method"] = "oidc"
+                audit_event("login_success", username=session["username"], role=session["role"], details={"method": "oidc"})
+                st.rerun()
+            except ValueError as exc:
+                audit_event("sso_user_denied", details={"reason": str(exc)})
+                st.error("Your SSO account is not provisioned for this application.")
+                st.stop()
+
+    st.subheader("Password login")
+    regular_login()
 
 
 if "access_token" not in st.session_state:
@@ -76,10 +102,13 @@ with st.sidebar:
     st.header("Authenticated user")
     st.write(f"**{session['username']}**")
     st.write(f"Role: **{session['role']}**")
+    st.write(f"Auth: **{st.session_state.get('auth_method', 'password')}**")
     st.write("Allowed departments:")
     st.write(session["allowed_departments"])
     if st.button("Sign out"):
         audit_event("logout", username=session["username"], role=session["role"])
+        if st.session_state.get("auth_method") == "oidc" and getattr(st.user, "is_logged_in", False):
+            st.logout()
         st.session_state.clear()
         st.rerun()
 
