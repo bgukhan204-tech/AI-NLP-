@@ -1,11 +1,7 @@
-"""Generate Streamlit OIDC secrets.toml from runtime environment variables.
-
-Render stores secrets as environment variables. Streamlit's native OIDC flow
-reads its provider configuration from .streamlit/secrets.toml, so this file is
-generated at container startup and is never committed with real credentials.
-"""
+"""Generate Streamlit OIDC secrets.toml from runtime environment variables."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -15,6 +11,10 @@ def required(name: str) -> str:
     if not value:
         raise SystemExit(f"Missing required OIDC environment variable: {name}")
     return value
+
+
+def quote(value: str) -> str:
+    return json.dumps(value)
 
 
 def main() -> None:
@@ -31,7 +31,7 @@ def main() -> None:
     google_configured = bool(google_id and google_secret)
     microsoft_configured = bool(microsoft_id and microsoft_secret and microsoft_tenant)
 
-    # OIDC is optional until at least one provider has been configured.
+    # OIDC remains optional until at least one provider is configured.
     if not google_configured and not microsoft_configured:
         return
 
@@ -40,8 +40,8 @@ def main() -> None:
 
     lines = [
         "[auth]",
-        f'redirect_uri = {redirect_uri!r}',
-        f'cookie_secret = {cookie_secret!r}',
+        f"redirect_uri = {quote(redirect_uri)}",
+        f"cookie_secret = {quote(cookie_secret)}",
         "",
     ]
 
@@ -49,8 +49,8 @@ def main() -> None:
         lines.extend(
             [
                 "[auth.google]",
-                f'client_id = {google_id!r}',
-                f'client_secret = {google_secret!r}',
+                f"client_id = {quote(google_id)}",
+                f"client_secret = {quote(google_secret)}",
                 'server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"',
                 "",
             ]
@@ -60,8 +60,8 @@ def main() -> None:
         lines.extend(
             [
                 "[auth.microsoft]",
-                f'client_id = {microsoft_id!r}',
-                f'client_secret = {microsoft_secret!r}',
+                f"client_id = {quote(microsoft_id)}",
+                f"client_secret = {quote(microsoft_secret)}",
                 f'server_metadata_url = "https://login.microsoftonline.com/{microsoft_tenant}/v2.0/.well-known/openid-configuration"',
                 "",
             ]
