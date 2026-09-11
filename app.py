@@ -30,6 +30,25 @@ except Exception:
     st.stop()
 
 
+def complete_oidc_login(provider: str) -> None:
+    try:
+        session = session_from_oidc_user(dict(st.user))
+        st.session_state["access_token"] = issue_token(session)
+        st.session_state["session"] = session
+        st.session_state["auth_method"] = provider
+        audit_event(
+            "login_success",
+            username=session["username"],
+            role=session["role"],
+            details={"method": provider},
+        )
+        st.rerun()
+    except ValueError as exc:
+        audit_event("sso_user_denied", details={"provider": provider, "reason": str(exc)})
+        st.error("Your SSO account is not provisioned for this application.")
+        st.stop()
+
+
 def regular_login() -> None:
     with st.form("login"):
         username = st.text_input("Username")
@@ -59,26 +78,25 @@ def regular_login() -> None:
 
 def login() -> None:
     st.title("🔐 Enterprise AI Knowledge Assistant")
-    oidc_enabled = os.getenv("OIDC_ENABLED", "false").lower() == "true"
+    oidc_enabled = os.getenv("OIDC_ENABLED", "true").lower() == "true"
+    google_enabled = os.getenv("GOOGLE_CLIENT_ID", "").strip() and os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    microsoft_enabled = (
+        os.getenv("MICROSOFT_CLIENT_ID", "").strip()
+        and os.getenv("MICROSOFT_CLIENT_SECRET", "").strip()
+        and os.getenv("MICROSOFT_TENANT_ID", "").strip()
+    )
 
-    if oidc_enabled:
+    if oidc_enabled and (google_enabled or microsoft_enabled):
         st.subheader("Enterprise SSO")
-        if st.button("Sign in with SSO", type="primary"):
-            st.login(os.getenv("OIDC_PROVIDER", "google"))
-        st.divider()
+        if google_enabled and st.button("Sign in with Google", type="primary"):
+            st.login("google")
+        if microsoft_enabled and st.button("Sign in with Microsoft"):
+            st.login("microsoft")
 
         if getattr(st.user, "is_logged_in", False):
-            try:
-                session = session_from_oidc_user(dict(st.user))
-                st.session_state["access_token"] = issue_token(session)
-                st.session_state["session"] = session
-                st.session_state["auth_method"] = "oidc"
-                audit_event("login_success", username=session["username"], role=session["role"], details={"method": "oidc"})
-                st.rerun()
-            except ValueError as exc:
-                audit_event("sso_user_denied", details={"reason": str(exc)})
-                st.error("Your SSO account is not provisioned for this application.")
-                st.stop()
+            provider = st.session_state.get("oidc_provider", "oidc")
+            complete_oidc_login(provider)
+        st.divider()
 
     st.subheader("Password login")
     regular_login()
@@ -107,7 +125,7 @@ with st.sidebar:
     st.write(session["allowed_departments"])
     if st.button("Sign out"):
         audit_event("logout", username=session["username"], role=session["role"])
-        if st.session_state.get("auth_method") == "oidc" and getattr(st.user, "is_logged_in", False):
+        if st.session_state.get("auth_method") in {"google", "microsoft", "oidc"} and getattr(st.user, "is_logged_in", False):
             st.logout()
         st.session_state.clear()
         st.rerun()
