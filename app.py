@@ -30,9 +30,20 @@ except Exception:
     st.stop()
 
 
-def complete_oidc_login(provider: str) -> None:
+def oidc_provider_from_user(oidc_user: dict) -> str:
+    issuer = str(oidc_user.get("iss", "")).lower()
+    if "accounts.google.com" in issuer:
+        return "google"
+    if "microsoftonline.com" in issuer or "microsoft.com" in issuer:
+        return "microsoft"
+    return "oidc"
+
+
+def complete_oidc_login() -> None:
+    user = dict(st.user)
+    provider = oidc_provider_from_user(user)
     try:
-        session = session_from_oidc_user(dict(st.user))
+        session = session_from_oidc_user(user)
         st.session_state["access_token"] = issue_token(session)
         st.session_state["session"] = session
         st.session_state["auth_method"] = provider
@@ -79,8 +90,8 @@ def regular_login() -> None:
 def login() -> None:
     st.title("🔐 Enterprise AI Knowledge Assistant")
     oidc_enabled = os.getenv("OIDC_ENABLED", "true").lower() == "true"
-    google_enabled = os.getenv("GOOGLE_CLIENT_ID", "").strip() and os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
-    microsoft_enabled = (
+    google_enabled = bool(os.getenv("GOOGLE_CLIENT_ID", "").strip() and os.getenv("GOOGLE_CLIENT_SECRET", "").strip())
+    microsoft_enabled = bool(
         os.getenv("MICROSOFT_CLIENT_ID", "").strip()
         and os.getenv("MICROSOFT_CLIENT_SECRET", "").strip()
         and os.getenv("MICROSOFT_TENANT_ID", "").strip()
@@ -94,8 +105,7 @@ def login() -> None:
             st.login("microsoft")
 
         if getattr(st.user, "is_logged_in", False):
-            provider = st.session_state.get("oidc_provider", "oidc")
-            complete_oidc_login(provider)
+            complete_oidc_login()
         st.divider()
 
     st.subheader("Password login")
