@@ -1,0 +1,80 @@
+"""Generate Streamlit OIDC secrets.toml from runtime environment variables.
+
+Render stores secrets as environment variables. Streamlit's native OIDC flow
+reads its provider configuration from .streamlit/secrets.toml, so this file is
+generated at container startup and is never committed with real credentials.
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+
+def required(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise SystemExit(f"Missing required OIDC environment variable: {name}")
+    return value
+
+
+def main() -> None:
+    enabled = os.getenv("OIDC_ENABLED", "true").strip().lower() == "true"
+    if not enabled:
+        return
+
+    google_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    google_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    microsoft_id = os.getenv("MICROSOFT_CLIENT_ID", "").strip()
+    microsoft_secret = os.getenv("MICROSOFT_CLIENT_SECRET", "").strip()
+    microsoft_tenant = os.getenv("MICROSOFT_TENANT_ID", "").strip()
+
+    google_configured = bool(google_id and google_secret)
+    microsoft_configured = bool(microsoft_id and microsoft_secret and microsoft_tenant)
+
+    # OIDC is optional until at least one provider has been configured.
+    if not google_configured and not microsoft_configured:
+        return
+
+    redirect_uri = required("OIDC_REDIRECT_URI")
+    cookie_secret = required("OIDC_COOKIE_SECRET")
+
+    lines = [
+        "[auth]",
+        f'redirect_uri = {redirect_uri!r}',
+        f'cookie_secret = {cookie_secret!r}',
+        "",
+    ]
+
+    if google_configured:
+        lines.extend(
+            [
+                "[auth.google]",
+                f'client_id = {google_id!r}',
+                f'client_secret = {google_secret!r}',
+                'server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"',
+                "",
+            ]
+        )
+
+    if microsoft_configured:
+        lines.extend(
+            [
+                "[auth.microsoft]",
+                f'client_id = {microsoft_id!r}',
+                f'client_secret = {microsoft_secret!r}',
+                f'server_metadata_url = "https://login.microsoftonline.com/{microsoft_tenant}/v2.0/.well-known/openid-configuration"',
+                "",
+            ]
+        )
+
+    target = Path(".streamlit/secrets.toml")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("\n".join(lines), encoding="utf-8")
+    try:
+        target.chmod(0o600)
+    except OSError:
+        pass
+
+
+if __name__ == "__main__":
+    main()
