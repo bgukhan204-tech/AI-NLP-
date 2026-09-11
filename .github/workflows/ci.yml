@@ -31,8 +31,14 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Verify imports
+        run: python -c "import streamlit, authlib, qdrant_client, sentence_transformers, pypdf, pandas, openpyxl, groq, jwt, psycopg, yaml"
+      - name: Compile application
+        run: python -m compileall -q app.py src scripts
       - name: Run tests
         env:
           JWT_SECRET: ci-only-test-secret
           DATABASE_URL: postgresql://rag_test:rag_test@localhost:5432/rag_test
         run: pytest -q
+      - name: Build Docker image
+        run: docker build -t enterprise-rag-rbac:ci .
