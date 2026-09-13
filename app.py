@@ -1,5 +1,6 @@
 import os
 import time
+
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -8,20 +9,24 @@ load_dotenv()
 from src.audit import audit_event
 from src.auth import decode_token, issue_token
 from src.database import Database
+from src.qdrant_store import delete_document, list_documents
 from src.rag import EnterpriseRAG
 from src.rbac import authenticate, session_from_claims
 from src.sso import session_from_oidc_user
 
-st.set_page_config(page_title="Enterprise RAG", page_icon="🔐")
+st.set_page_config(page_title="Enterprise RAG", page_icon="🔐", layout="wide")
+
 
 @st.cache_resource
 def get_rag() -> EnterpriseRAG:
     return EnterpriseRAG()
 
+
 @st.cache_resource
 def init_database() -> bool:
     Database().initialize()
     return True
+
 
 try:
     init_database()
@@ -133,6 +138,8 @@ with st.sidebar:
     st.write(f"Auth: **{st.session_state.get('auth_method', 'password')}**")
     st.write("Allowed departments:")
     st.write(session["allowed_departments"])
+    st.divider()
+    st.caption("Security: retrieval is filtered by RBAC before LLM generation.")
     if st.button("Sign out"):
         audit_event("logout", username=session["username"], role=session["role"])
         if st.session_state.get("auth_method") in {"google", "microsoft", "oidc"} and getattr(st.user, "is_logged_in", False):
@@ -141,14 +148,17 @@ with st.sidebar:
         st.rerun()
 
 st.title("Enterprise AI Knowledge Assistant")
-st.caption("RAG retrieval is filtered by the authenticated user's RBAC permissions before LLM generation.")
+st.caption("Authorized documents are retrieved first; the LLM only receives the permitted context.")
 
 st.subheader("Ask the company knowledge base")
 question = st.text_input("Question", placeholder="What is our leave policy?")
+col1, col2 = st.columns([1, 4])
+with col1:
+    top_k = st.slider("Sources", min_value=1, max_value=10, value=5)
 
 if st.button("Ask AI", type="primary") and question.strip():
     with st.spinner("Searching authorized documents..."):
-        result = get_rag().ask(question.strip(), session["allowed_departments"])
+        result = get_rag().ask(question.strip(), session["allowed_departments"], top_k=top_k)
     audit_event(
         "rag_query",
         username=session["username"],
@@ -164,26 +174,69 @@ if st.button("Ask AI", type="primary") and question.strip():
 
 if session["role"] == "hr_admin":
     st.divider()
-    st.subheader("Document administration")
-    uploaded = st.file_uploader("PDF, TXT, CSV or Excel", type=["pdf", "txt", "csv", "xlsx", "xls"])
-    department = st.selectbox("Department", ["general", "engineering", "hr_public", "finance", "management", "hr_private"])
-    if uploaded and st.button("Index document"):
-        import tempfile
-        from pathlib import Path
-        suffix = Path(uploaded.name).suffix
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(uploaded.getvalue())
-            tmp_path = tmp.name
+    st.subheader("Enterprise administration")
+    index_tab, docs_tab, audit_tab = st.tabs(["Index document", "Manage documents", "Audit log"])
+
+    with index_tab:
+        uploaded = st.file_uploader("PDF, TXT, CSV or Excel", type=["pdf", "txt", "csv", "xlsx", "xls"])
+        department = st.selectbox(
+            "Department",
+            ["general", "engineering", "hr_public", "finance", "management", "hr_private"],
+        )
+        if uploaded and st.button("Index document"):
+            import tempfile
+            from pathlib import Path
+
+            suffix = Path(uploaded.name).suffix
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(uploaded.getvalue())
+                tmp_path = tmp.name
+            try:
+                with st.spinner("Chunking, embedding and indexing..."):
+                    count = get_rag().index_document(tmp_path, department)
+                audit_event(
+                    "document_indexed",
+                    username=session["username"],
+                    role=session["role"],
+                    details={"filename": uploaded.name, "department": department, "chunks": count},
+                )
+                st.success(f"Indexed {count} chunks from {uploaded.name}.")
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+
+    with docs_tab:
+        st.caption("Manage documents already stored in the vector database.")
         try:
-            with st.spinner("Chunking, embedding and indexing..."):
-                count = get_rag().index_document(tmp_path, department)
-            audit_event(
-                "document_indexed",
-                username=session["username"],
-                role=session["role"],
-                details={"filename": uploaded.name, "department": department, "chunks": count},
-            )
-            st.success(f"Indexed {count} chunks from {uploaded.name}.")
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+            rag = get_rag()
+            if not rag.client.collection_exists(os.getenv("QDRANT_COLLECTION", "enterprise_documents")):
+                st.info("No documents have been indexed yet.")
+            else:
+                documents = list_documents(rag.client)
+                if not documents:
+                    st.info("No documents have been indexed yet.")
+                else:
+                    st.dataframe(documents, use_container_width=True, hide_index=True)
+                    labels = [f"{d['source']} · {d['department']} · {d['chunks']} chunks" for d in documents]
+                    selected = st.selectbox("Document to remove", labels)
+                    if st.button("Delete selected document", type="secondary"):
+                        selected_doc = documents[labels.index(selected)]
+                        delete_document(rag.client, selected_doc["source"], selected_doc["department"])
+                        audit_event(
+                            "document_deleted",
+                            username=session["username"],
+                            role=session["role"],
+                            details={"filename": selected_doc["source"], "department": selected_doc["department"]},
+                        )
+                        st.success(f"Deleted {selected_doc['source']} from {selected_doc['department']}.")
+                        st.rerun()
+        except Exception:
+            st.error("Unable to read the document index. Check Qdrant configuration and logs.")
+
+    with audit_tab:
+        st.caption("Recent security and application events. Question text is not stored by default.")
+        try:
+            events = Database().recent_audit_events(100)
+            st.dataframe(events, use_container_width=True, hide_index=True)
+        except Exception:
+            st.error("Unable to load the audit log. Check PostgreSQL configuration and logs.")
