@@ -1,6 +1,7 @@
 """PostgreSQL-backed user store and audit persistence."""
 from __future__ import annotations
 
+import json
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -92,7 +93,23 @@ class Database:
                     username,
                     role,
                     request_id,
-                    __import__("json").dumps(details or {}),
+                    json.dumps(details or {}),
                     datetime.now(timezone.utc),
                 ),
+            )
+
+    def recent_audit_events(self, limit: int = 100) -> list[dict]:
+        """Return recent audit records for the HR admin dashboard."""
+        safe_limit = max(1, min(int(limit), 500))
+        with self.connection() as conn:
+            return list(
+                conn.execute(
+                    """
+                    SELECT id, event_type, username, role, request_id, details, created_at
+                    FROM audit_events
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (safe_limit,),
+                ).fetchall()
             )
