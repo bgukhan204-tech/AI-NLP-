@@ -1,0 +1,3 @@
+package com.gukhan.ainlp.rbac;
+import java.util.*;import org.springframework.stereotype.Service;
+@Service public class RbacService{private static final Map<String,Set<String>> ACCESS=Map.of("EMPLOYEE",Set.of("general","engineering","hr_public"),"MANAGER",Set.of("general","engineering","hr_public","finance","management"),"HR_ADMIN",Set.of("general","engineering","hr_public","finance","management","hr_private"));public boolean canAccess(String role,String d){return ACCESS.getOrDefault(role.toUpperCase(),Set.of()).contains(d);}public Set<String> departments(String role){return ACCESS.getOrDefault(role.toUpperCase(),Set.of());}}
