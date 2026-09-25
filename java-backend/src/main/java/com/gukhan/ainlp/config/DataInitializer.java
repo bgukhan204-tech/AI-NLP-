@@ -1,0 +1,3 @@
+package com.gukhan.ainlp.config;
+import com.gukhan.ainlp.user.User;import com.gukhan.ainlp.user.UserRepository;import org.springframework.boot.CommandLineRunner;import org.springframework.context.annotation.*;import org.springframework.security.crypto.password.PasswordEncoder;
+@Configuration public class DataInitializer{@Bean CommandLineRunner seed(UserRepository users,PasswordEncoder encoder){return args->{if(users.count()==0){users.save(new User("employee1",encoder.encode("ChangeMe123!"),"EMPLOYEE"));users.save(new User("manager1",encoder.encode("ChangeMe123!"),"MANAGER"));users.save(new User("hradmin",encoder.encode("ChangeMe123!"),"HR_ADMIN"));}};}}
