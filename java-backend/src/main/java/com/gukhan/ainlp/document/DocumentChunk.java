@@ -1,0 +1,3 @@
+package com.gukhan.ainlp.document;
+import jakarta.persistence.*;
+@Entity @Table(name="document_chunks",indexes=@Index(name="idx_department",columnList="department")) public class DocumentChunk{@Id @GeneratedValue(strategy=GenerationType.IDENTITY)private Long id;@Column(nullable=false,columnDefinition="TEXT")private String text;@Column(nullable=false)private String department;@Column(nullable=false)private String source;public DocumentChunk(){}public DocumentChunk(String t,String d,String s){text=t;department=d;source=s;}public String getText(){return text;}public String getDepartment(){return department;}public String getSource(){return source;}}
