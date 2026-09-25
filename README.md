@@ -128,3 +128,17 @@ Audit logs intentionally store metadata such as question length and source count
 - [ ] Provision real application users
 - [ ] Run end-to-end production tests after Render redeploy
 - [ ] Add production backups, monitoring/alerts and dependency/security scanning
+
+
+## Java / Spring Boot migration
+
+A Java 21 + Spring Boot implementation is now available under [java-backend](java-backend/). It adds Spring Security, BCrypt password verification, stateless JWT authentication, database-backed users, department-level RBAC, PDF/Excel/TXT ingestion, and a Java RAG service boundary. The existing Python application is intentionally retained so the current deployment is not broken during migration.
+
+Run the Java backend with:
+
+```bash
+cd java-backend
+mvn spring-boot:run
+```
+
+The next integration stage is Qdrant semantic retrieval + Groq generation, followed by the React UI and production OIDC SSO.
