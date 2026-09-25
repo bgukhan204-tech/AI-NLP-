@@ -1,0 +1,3 @@
+package com.gukhan.ainlp.rag;
+import jakarta.validation.Valid;import jakarta.validation.constraints.NotBlank;import org.springframework.web.bind.annotation.*;
+@RestController @RequestMapping("/api/rag")public class RagController{private final RagService service;public RagController(RagService s){service=s;}@PostMapping("/ask")public Answer ask(@Valid @RequestBody AskRequest r){return service.answer(r.question());}}record AskRequest(@NotBlank String question){}record Answer(String answer,java.util.List<String> sources){}
